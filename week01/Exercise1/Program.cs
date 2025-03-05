@@ -1,6 +1,6 @@
 using System;
 
-class Program
+class Programg
 {
     static void Main()
     {
