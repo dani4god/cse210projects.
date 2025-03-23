@@ -2,143 +2,168 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
+
 class Program
 {
     static void Main()
     {
-        Console.Clear();
-        Console.WriteLine("Welcome to the Scripture Memorizer!\n");
-        Scripture scripture = Scripture.LoadOrGetNew();
-        while (!scripture.IsCompletelyHidden())
-        {
-            Console.Clear();
-    Console.WriteLine(scripture.GetDisplayText());
-    Console.WriteLine($"$\nWords Remaining: {scripture.WordsRemaining()}");
-            
-            Console.WriteLine("\nPress ENTER to hide words or type 'quit' to save & exit.");
-            string input = Console.ReadLine();
-            if (input.ToLower() == "quit")
-            {
-    scripture.SaveProgress();
-    Console.WriteLine("Progress saved. Goodbye!");
-                return;
-            }
-    scripture.HideRandomWords(3);
-        }
-        Console.Clear();
-Console.WriteLine(scripture.GetDisplayText());
-        Console.WriteLine("\n Congratulations! You've memorized thescripture!");
-File.Delete("progress.json"); // Clear saved progress after completion
-    }
-}
-// Stores scripture reference (e.g., "John 3:16")
-class Reference
-{
-    public string Book { get; }
-    public int Chapter { get; }
-    public int StartVerse { get; }
-    public int? EndVerse { get; } // Nullable for single-verse references
-    public Reference(string book, int chapter, int startVerse, int? endVerse = null)
-    {
+        string filePath = "scripture.txt";
 
-        Book = book;
-        Chapter = chapter;
-        StartVerse = startVerse;
-        EndVerse = endVerse;
-    }
-    public string GetDisplayText()
-    {
-        return EndVerse.HasValue ? $"${Book} {Chapter}:{StartVerse}-{EndVerse}" : $"{Book} {Chapter}:{StartVerse}";
+        // Hardcoded scriptures
+        List<string> scriptures = new List<string>
+        {
+            "John 3:16 - For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
+            "Proverbs 3:5-6 - Trust in the Lord with all thine heart; and lean not unto thine own understanding. In all thy ways acknowledge him, and he shall direct thy paths.",
+            "Philippians 4:13 - I can do all things through Christ which strengtheneth me.",
+            "Psalm 23:1 - The Lord is my shepherd; I shall not want."
+        };
+
+        // Write scriptures to the file if it doesn't exist
+        if (!File.Exists(filePath))
+        {
+            File.WriteAllLines(filePath, scriptures);
+        }
+
+        // Load scriptures from file
+        List<string> loadedScriptures = new List<string>(File.ReadAllLines(filePath));
+        Random random = new Random();
+        string selectedScripture = loadedScriptures[random.Next(loadedScriptures.Count)];
+
+        // Display difficulty options
+        Console.WriteLine("Choose a difficulty level:");
+        Console.WriteLine("1. Easy (1 word at a time)");
+        Console.WriteLine("2. Medium (3 words at a time)");
+        Console.WriteLine("3. Hard (5 words at a time)");
+        int difficulty = int.Parse(Console.ReadLine() ?? "2");
+
+        int wordsToHide = difficulty switch
+        {
+            1 => 1,
+            2 => 3,
+            3 => 5,
+            _ => 3
+        };
+
+        Scripture scripture = new Scripture(selectedScripture);
+        Console.Clear();
+
+        // Start memorization process
+        while (!scripture.AllWordsHidden())
+        {
+            Console.WriteLine(scripture.GetFormattedScripture());
+            Console.WriteLine("\nPress Enter to hide words, type 'hint' to reveal one word, or 'quit' to exit.");
+            string input = Console.ReadLine()?.Trim().ToLower();
+
+            if (input == "quit")
+            {
+                Console.WriteLine("\nThank you for using the Scripture Memorizer!");
+                break;
+            }
+            else if (input == "hint")
+            {
+                scripture.RevealWord();
+            }
+            else
+            {
+                scripture.HideWords(wordsToHide);
+            }
+
+            Console.Clear();
+        }
+
+        // Final display
+        Console.WriteLine(scripture.GetFormattedScripture());
+        Console.WriteLine("\nWell done! You've memorized the scripture.");
     }
 }
-//  Represents a single word in the scripture
-class Word
-{
-    public string Text { get; }
-    public bool IsHidden { get; private set; }
-    public Word(string text)
-    {
-        Text = text;
-        IsHidden = false;
-    }
-    public void Hide() => IsHidden = true;
-    public string GetDisplayText() => IsHidden ? new string('_', Text.Length): Text;
-}
-// Stores scripture text and handles word hiding
+
+// Scripture class manages the scripture text and hiding words
 class Scripture
 {
-    public Reference ScriptureReference { get; }
-    private List<Word> Words { get; }
-    public Scripture(Reference reference, string text)
-    {
-        ScriptureReference = reference;
-        Words = text.Split("").Select(word => new Word(word)).ToList();
-    }
-    public string GetDisplayText()
-    {
-        string wordsText = string.Join("", Words.Select(w => w.GetDisplayText()));
-        return $"{ScriptureReference.GetDisplayText()} - {wordsText}";
-    }
-    public void HideRandomWords(int count)
-    {
-        Random random = new Random();
-        List<Word> visibleWords = Words.Where(w => !w.IsHidden).ToList();
-        if (visibleWords.Count == 0) return; // All words are already hidden
+    private string _reference;
+    private List<Word> _words;
+    private Random _random = new Random();
 
+    public Scripture(string fullText)
+    {
+        int dashIndex = fullText.IndexOf(" - ");
+        if (dashIndex > 0)
+        {
+            _reference = fullText.Substring(0, dashIndex);
+            string text = fullText.Substring(dashIndex + 3);
+            _words = text.Split(' ').Select(word => new Word(word)).ToList();
+        }
+        else
+        {
+            _reference = "Unknown Reference";
+            _words = fullText.Split(' ').Select(word => new Word(word)).ToList();
+        }
+    }
+
+    public void HideWords(int count)
+    {
+        List<Word> visibleWords = _words.Where(w => !w.IsHidden()).ToList();
         for (int i = 0; i < count && visibleWords.Count > 0; i++)
         {
-            int index = random.Next(visibleWords.Count);
+            int index = _random.Next(visibleWords.Count);
             visibleWords[index].Hide();
-            visibleWords.RemoveAt(index); // Remove to prevent re-hiding
+            visibleWords.RemoveAt(index);
         }
     }
-    public bool IsCompletelyHidden() => Words.All(w => w.IsHidden);
-    public int WordsRemaining() => Words.Count(w => !w.IsHidden); //  Save progress to a file
-    public void SaveProgress()
-    {
-        var data = new { Reference = ScriptureReference.GetDisplayText(),
-        Words = Words.Select(w => new { w.Text, w.IsHidden }).ToList() };
-        File.WriteAllText("progress.json", JsonSerializer.Serialize(data, new
-        JsonSerializerOptions { WriteIndented = true }));
-    }
 
-// �� Load progress or pick a new scripture
-    public static Scripture LoadOrGetNew()
+    public void RevealWord()
     {
-        if (File.Exists("progress.json"))
+        List<Word> hiddenWords = _words.Where(w => w.IsHidden()).ToList();
+        if (hiddenWords.Count > 0)
         {
-            string json = File.ReadAllText("progress.json");
-            var data = JsonSerializer.Deserialize<Dictionary<string,object>>(json);
-            string referenceText = data["Reference"].ToString();
-            var wordsData = JsonSerializer.Deserialize<List<Dictionary<string,object>>>(data["Words"].ToString());
-        // Extract reference details
-            string[] parts = referenceText.Split(new[] {  ':' }, StringSplitOptions.RemoveEmptyEntries);Reference reference = new Reference(parts[0],
-            int.Parse(parts[1]), int.Parse(parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : (int?)null);
-// Reconstruct words list
-            Scripture scripture = new Scripture(reference, string.Join("",
-            wordsData.Select(w => w["Text"].ToString())));
-            for (int i = 0; i < wordsData.Count; i++)
-            {
-                if ((bool)wordsData[i]["IsHidden"])
-                scripture.Words[i].Hide();
-            }
-            return scripture;
+            int index = _random.Next(hiddenWords.Count);
+            hiddenWords[index].Reveal();
         }
-// If no saved progress, pick a new scripture
-        return GetRandomScripture();
     }
 
-// Pick a random scripture from a list
-    private static Scripture GetRandomScripture()
+    public bool AllWordsHidden()
     {
-        List<Scripture> scriptures = new List<Scripture>
-        {
-            new Scripture(new Reference("John", 3, 16), "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."),
-            new Scripture(new Reference("Proverbs", 3, 5, 6), "Trust in the Lord with all thine heart; and lean not unto thine own understanding. In all thy ways acknowledge him, and he shall direct thy paths."),
-new Scripture(new Reference("Romans", 8, 28), "And we know that all things work together for good to them that love God, to them who are thecalled according to his purpose.")
-        };
-        Random random = new Random();
-        return scriptures[random.Next(scriptures.Count)];
+        return _words.All(w => w.IsHidden());
+    }
+
+    public string GetFormattedScripture()
+    {
+        return $"{_reference} - {string.Join(" ", _words.Select(w => w.GetDisplayWord()))}";
     }
 }
+
+// Word class manages individual words in the scripture
+class Word
+{
+    private string _originalWord;
+    private bool _hidden;
+
+    public Word(string word)
+    {
+        _originalWord = word;
+        _hidden = false;
+    }
+
+    public void Hide()
+    {
+        _hidden = true;
+    }
+
+    public void Reveal()
+    {
+        _hidden = false;
+    }
+
+    public bool IsHidden()
+    {
+        return _hidden;
+    }
+
+    public string GetDisplayWord()
+    {
+        return _hidden ? new string('_', _originalWord.Length) : _originalWord;
+    }
+}
+ 
+
+
